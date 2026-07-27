@@ -5,7 +5,9 @@ import { Route, Switch, Router as WouterRouter } from 'wouter';
 
 import { PlayerProvider } from './context/PlayerContext';
 import { SubscriptionProvider } from './context/SubscriptionContext';
+import { YouTubePlayerProvider } from './context/YouTubePlayerContext';
 import { PlayerBar } from './components/PlayerBar';
+import { YouTubePlayerBar } from './components/YouTubePlayerBar';
 import { Navbar } from './components/Navbar';
 
 import Discover from './pages/Discover';
@@ -56,16 +58,19 @@ function App() {
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
           <SubscriptionProvider>
-            <PlayerProvider>
-              <div className="min-h-[100dvh] flex flex-col bg-background text-foreground selection:bg-primary/30 selection:text-primary relative font-sans">
-                <Navbar />
-                <main className="flex-1">
-                  <Router />
-                </main>
-                <PlayerBar />
-              </div>
-              <Toaster />
-            </PlayerProvider>
+            <YouTubePlayerProvider>
+              <PlayerProvider>
+                <div className="min-h-[100dvh] flex flex-col bg-background text-foreground selection:bg-primary/30 selection:text-primary relative font-sans">
+                  <Navbar />
+                  <main className="flex-1">
+                    <Router />
+                  </main>
+                  <PlayerBar />
+                  <YouTubePlayerBar />
+                </div>
+                <Toaster />
+              </PlayerProvider>
+            </YouTubePlayerProvider>
           </SubscriptionProvider>
         </WouterRouter>
       </TooltipProvider>
