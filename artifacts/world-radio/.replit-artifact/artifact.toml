@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "World Radio"
+version = "1.0.0"
+id = "artifacts/world-radio"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23029
+
+[services.development]
+run = "pnpm --filter @workspace/world-radio run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/world-radio", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/world-radio/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23029"
+BASE_PATH = "/"
