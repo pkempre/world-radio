@@ -9,6 +9,7 @@ import { YouTubePlayerProvider } from './context/YouTubePlayerContext';
 import { PlayerBar } from './components/PlayerBar';
 import { YouTubePlayerBar } from './components/YouTubePlayerBar';
 import { Navbar } from './components/Navbar';
+import { InstallBanner } from './components/InstallBanner';
 
 import Discover from './pages/Discover';
 import Browse from './pages/Browse';
@@ -62,6 +63,7 @@ function App() {
               <PlayerProvider>
                 <div className="min-h-[100dvh] flex flex-col bg-background text-foreground selection:bg-primary/30 selection:text-primary relative font-sans">
                   <Navbar />
+                  <InstallBanner />
                   <main className="flex-1">
                     <Router />
                   </main>
