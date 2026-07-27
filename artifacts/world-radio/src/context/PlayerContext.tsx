@@ -47,6 +47,22 @@ function setMediaSessionState(state: 'playing' | 'paused' | 'none') {
   navigator.mediaSession.playbackState = state;
 }
 
+function setMediaSessionAction(
+  action: MediaSessionAction,
+  handler: MediaSessionActionHandler | null,
+) {
+  if (!('mediaSession' in navigator)) return;
+
+  // Some browsers expose Media Session but do not implement every action.
+  // Keeping each registration isolated prevents one unsupported action from
+  // disabling the rest of the lock-screen controls.
+  try {
+    navigator.mediaSession.setActionHandler(action, handler);
+  } catch {
+    // Unsupported Media Session actions are safe to ignore.
+  }
+}
+
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
@@ -59,16 +75,28 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   // Keep a stable ref to the current station so Media Session handlers can close over it
   const stationRef = useRef<Station | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
 
   // ── Audio element setup ──────────────────────────────────────────────────────
   useEffect(() => {
     const audio = new Audio();
+    audio.preload = 'none';
+    audio.setAttribute('playsinline', '');
     audio.volume = volume;
     // Required on iOS for background audio — the element must not be muted
     audio.muted = false;
     audioRef.current = audio;
 
+    const clearReconnectTimer = () => {
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+
     const handlePlaying = () => {
+      reconnectAttemptRef.current = 0;
       setIsLoading(false);
       setIsPlaying(true);
       setError(null);
@@ -83,7 +111,25 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
       setIsPlaying(false);
       setError('Stream unavailable');
-      setMediaSessionState('none');
+      setMediaSessionState('paused');
+
+      // Live stations occasionally drop a connection while the device is
+      // locked. Retry a few times without requiring the listener to reopen
+      // the app. A fresh user action resets the attempt counter.
+      const station = stationRef.current;
+      if (!station || reconnectAttemptRef.current >= 3) return;
+      reconnectAttemptRef.current += 1;
+      clearReconnectTimer();
+      reconnectTimerRef.current = setTimeout(() => {
+        if (!audioRef.current || stationRef.current?.stationuuid !== station.stationuuid) return;
+        audioRef.current.src = station.url_resolved;
+        audioRef.current.load();
+        setIsLoading(true);
+        audioRef.current.play().catch(() => {
+          setIsLoading(false);
+          setIsPlaying(false);
+        });
+      }, 1500 * reconnectAttemptRef.current);
     };
 
     const handlePause = () => {
@@ -101,6 +147,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       audio.removeEventListener('waiting', handleWaiting);
       audio.removeEventListener('error', handleError);
       audio.removeEventListener('pause', handlePause);
+      clearReconnectTimer();
       audio.pause();
       audio.src = '';
     };
@@ -115,7 +162,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
-    navigator.mediaSession.setActionHandler('play', () => {
+    setMediaSessionAction('play', () => {
       if (!audioRef.current) return;
       setIsLoading(true);
       audioRef.current.play().catch(() => {
@@ -126,11 +173,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
-    navigator.mediaSession.setActionHandler('pause', () => {
+    setMediaSessionAction('pause', () => {
       audioRef.current?.pause();
     });
 
-    navigator.mediaSession.setActionHandler('stop', () => {
+    setMediaSessionAction('stop', () => {
       if (!audioRef.current) return;
       audioRef.current.pause();
       audioRef.current.src = '';
@@ -142,14 +189,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     });
 
     // These are required for some lock-screen UIs — no-ops for live radio
-    navigator.mediaSession.setActionHandler('nexttrack', null);
-    navigator.mediaSession.setActionHandler('previoustrack', null);
+    setMediaSessionAction('nexttrack', null);
+    setMediaSessionAction('previoustrack', null);
 
     return () => {
       if (!('mediaSession' in navigator)) return;
-      navigator.mediaSession.setActionHandler('play', null);
-      navigator.mediaSession.setActionHandler('pause', null);
-      navigator.mediaSession.setActionHandler('stop', null);
+      setMediaSessionAction('play', null);
+      setMediaSessionAction('pause', null);
+      setMediaSessionAction('stop', null);
+      setMediaSessionAction('nexttrack', null);
+      setMediaSessionAction('previoustrack', null);
     };
   }, []);
 
@@ -160,6 +209,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     fetch(`/api/radio/json/url/${station.stationuuid}`, { method: 'POST' }).catch(() => {});
 
     stationRef.current = station;
+    reconnectAttemptRef.current = 0;
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     setCurrentStation(station);
     setIsLoading(true);
     setError(null);
@@ -170,12 +224,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     audioRef.current.src = station.url_resolved;
     audioRef.current.load();
 
-    audioRef.current.play().catch((err) => {
-      console.error('Playback prevented:', err);
+    audioRef.current.play().catch(() => {
       setError('Playback failed. Please try again.');
       setIsLoading(false);
       setIsPlaying(false);
-      setMediaSessionState('none');
+      setMediaSessionState('paused');
     });
   }, []);
 
@@ -187,12 +240,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       audioRef.current.pause();
     } else {
       setIsLoading(true);
-      audioRef.current.play().catch((err) => {
-        console.error('Playback prevented:', err);
+      audioRef.current.play().catch(() => {
         setError('Playback failed.');
         setIsLoading(false);
         setIsPlaying(false);
-        setMediaSessionState('none');
+        setMediaSessionState('paused');
       });
     }
   }, [isPlaying, currentStation]);

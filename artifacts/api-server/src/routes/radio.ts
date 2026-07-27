@@ -32,8 +32,15 @@ async function proxyToRadio(req: Request, res: Response) {
   }
 }
 
-// Proxy all GET and POST requests to Radio Browser API
-router.get("/*path", proxyToRadio);
-router.post("/*path", proxyToRadio);
+// Express 5's wildcard route syntax can vary across path-to-regexp
+// versions. A pathless router middleware reliably preserves the complete
+// path after the /api/radio mount for every Radio Browser endpoint.
+router.use((req, res, next): void => {
+  if (req.method === "GET" || req.method === "POST") {
+    void proxyToRadio(req, res);
+    return;
+  }
+  next();
+});
 
 export default router;
